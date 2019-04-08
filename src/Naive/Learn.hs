@@ -1,40 +1,33 @@
 module Naive.Learn  (
   Learn(..),
-  compose'
+  view,
+  (^.)
 ) where
 
 
-import Prelude hiding ((.), id)
-import qualified Prelude as P
+import Prelude (($))
+-- import qualified Prelude as P
 import Control.Category (Category(..))
 
-data Learn p a b = Learn {
-  _u :: p ->a ->b,
-  _i :: p ->a ->b ->p,
-  _r :: p ->a ->b ->a
-                         }
+data Learn p a b = Learn ((p,a) -> ((p,b), (p,b)-> (p,a)))
 
 instance Category (Learn p) where
-  id = Learn u i r where
-    u _ = P.id
-    i x _ _ = x
-    r _ a _ = a
-  (Learn u2 i2 r2) . (Learn u1 i1 r1) = Learn u i r where
-    u p a = u2 p (u1 p a)
-    i p a c = let b = u1 p a; p' = i2 p b c in i1 p' a b
-    r p a c = let b = u1 p a; b' = r2 p b c in r1 p a b'
+  id = Learn $ \x -> (x, \y -> y)
+  (Learn s2) . (Learn s1) = Learn $ \x ->
+    let (xb, br) = s1 x
+        (xc, cr)= s2 xb
+    in
+      (xc, \yc -> br (cr yc))
 
-compose' :: Learn q b c -> Learn p a b -> Learn (p,q) a c
-compose' x y = (cr' x) . (cl' y)
+data Lens a b = Lens (a -> b) (b -> a -> a)
 
-cl' :: Learn p a b -> Learn (p,q) a b
-cl' (Learn u1 i1 r1) = Learn u i r where
-  u (p, _) = u1 p
-  i (p, q) a b = (i1 p a b,q)
-  r (p, _) = r1 p
+view :: Lens q p -> Learn p a b -> Learn q a b
+view (Lens get put) (Learn s) = Learn sq where
+  sq (x,a) =
+    let
+      ((pb, b),br) = s ((get x),a)
+    in
+      ((put pb x,b), \(x', b') -> let (p', a') = br (get x', b') in (put p' x', a'))
 
-cr' :: Learn q a b -> Learn (p,q) a b
-cr' (Learn u1 i1 r1) = Learn u i r where
-  u (_, q) = u1 q
-  i (p, q) a b= (p,i1 q a b)
-  r (_, q) = r1 q
+(^.) :: Lens x q -> Lens x p -> Learn q b c -> Learn p a b -> Learn x a c
+(^.) lq lp cq cp = (view lq cq) . (view lp cp)
